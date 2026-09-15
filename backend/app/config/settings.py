@@ -31,6 +31,10 @@ class Settings(BaseSettings):
 
     # --- Security (used starting Phase 3, but the config slot exists now
     # so nothing has to be redesigned later) ---
+    # Also signs the JWT that will carry organization_id as a claim once
+    # multi-tenancy is wired up in Phase 2/3 (see docs/phase0-architecture-
+    # v2-multitenant.md). No tenant logic exists yet in Phase 1 — this is
+    # just the same SECRET_KEY slot v1 already had.
     SECRET_KEY: str = "dev-only-placeholder-change-me"
 
     # --- CORS ---

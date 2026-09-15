@@ -1,17 +1,32 @@
 # Smart University Academic Management System (Smart University CMS)
 
-A modular academic management platform — organizational structure, enrollment,
-attendance, grades, GPA/CGPA tracking, timetables, and (later) an AI academic
-assistant grounded in verified backend data.
+A modular, **multi-tenant SaaS** academic management platform — organizational
+structure, enrollment, attendance, grades, GPA/CGPA tracking, timetables, and
+(later) an AI academic assistant grounded in verified backend data. The
+platform hosts multiple independent organizations (universities, colleges,
+institutes) with backend-enforced data isolation between them.
 
 ## Current status
 
 **Phase 1 — Project Setup.** This repository currently contains only the
 development foundation: a running React frontend, a running FastAPI backend,
-and a verified PostgreSQL connection. There is no authentication, no academic
-data model, and no business logic yet — those begin in later phases. See
-`docs/phase0-architecture.md` (add your Phase 0 document here) for the full
-architecture and 24-phase roadmap.
+and a verified PostgreSQL connection. There is no authentication and no
+academic data model yet — those begin in later phases.
+
+**Architecture note (v2):** the platform is designed as multi-tenant from
+Phase 2 onward — one deployment, many organizations, isolated data. Tenant
+context is always derived from the authenticated user's JWT on the backend,
+never trusted from a frontend-supplied organization ID. See
+`docs/phase0-architecture-v2-multitenant.md` for the full rationale,
+including the shared-database vs. schema-per-tenant vs. database-per-tenant
+evaluation and how isolation is enforced end-to-end.
+`docs/phase0-architecture.md` is the original single-tenant v1 document,
+kept for reference; v2 supersedes its tenancy section.
+
+Phase 1 required no functional changes for this decision — there's no schema
+or auth yet for tenancy to apply to. It becomes real starting in Phase 2
+(organizations as the schema's tenant root, Row-Level Security policies) and
+Phase 3 (tenant context resolved from the JWT on every request).
 
 ## Technology stack
 
