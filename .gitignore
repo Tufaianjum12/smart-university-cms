@@ -1,0 +1,37 @@
+# --- Secrets / environment ---
+.env
+backend/.env
+frontend/.env
+*.env.local
+
+# --- Python / backend ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+backend/.venv/
+.pytest_cache/
+*.sqlite3
+
+# --- Alembic ---
+# (versions/ IS tracked — migration files are real history, not build output)
+
+# --- Node / frontend ---
+node_modules/
+frontend/node_modules/
+dist/
+frontend/dist/
+.vite/
+
+# --- IDE ---
+.vscode/
+.idea/
+*.swp
+
+# --- OS ---
+.DS_Store
+Thumbs.db
+
+# --- Logs ---
+*.log
+npm-debug.log*
