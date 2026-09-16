@@ -1,19 +1,3 @@
-// Route definitions.
-//
-// Phase 1 only needs one real route: the foundation status page. Future
-// phases add routes here (and, once auth exists, wrap protected ones in
-// a ProtectedRoute component) without touching App.jsx.
-
-import { Routes, Route } from "react-router-dom";
-import MainLayout from "../layouts/MainLayout";
-import StatusPage from "../pages/StatusPage";
-
-export default function AppRoutes() {
-  return (
-    <Routes>
-      <Route element={<MainLayout />}>
-        <Route path="/" element={<StatusPage />} />
-      </Route>
-    </Routes>
-  );
-}
+import { Routes, Route, Navigate } from "react-router-dom";
+import MainLayout from "../layouts/MainLayout";import AdminLayout from "../layouts/AdminLayout";import ProtectedRoute from "./ProtectedRoute";import StatusPage from "../pages/StatusPage";import LoginPage from "../pages/LoginPage";import DashboardPage from "../pages/admin/DashboardPage";import OrganizationPage from "../pages/admin/OrganizationPage";import ResourcePage from "../pages/admin/ResourcePage";import SuperOrganizationsPage from "../pages/admin/SuperOrganizationsPage";
+export default function AppRoutes(){return <Routes><Route element={<MainLayout/>}><Route path="/" element={<StatusPage/>}/><Route path="/login" element={<LoginPage/>}/></Route><Route element={<ProtectedRoute roles={["university_admin","department_admin"]}/>}><Route element={<AdminLayout/>}><Route path="/admin" element={<DashboardPage/>}/><Route path="/admin/organization" element={<OrganizationPage/>}/>{['campuses','departments','programs','academic-sessions','semesters','sections','classrooms'].map(r=><Route key={r} path={`/admin/${r}`} element={<ResourcePage resource={r}/>}/>)}</Route></Route><Route element={<ProtectedRoute roles={["super_admin"]}/>}><Route element={<AdminLayout/>}><Route path="/admin/organizations" element={<SuperOrganizationsPage/>}/></Route></Route><Route path="*" element={<Navigate to="/" replace/>}/></Routes>}

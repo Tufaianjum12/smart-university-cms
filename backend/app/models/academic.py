@@ -289,6 +289,12 @@ class AcademicSession(TenantModel):
         Date,
     )
 
+    is_current: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+    )
+
     is_active: Mapped[bool] = mapped_column(
         Boolean,
         nullable=False,
@@ -797,9 +803,9 @@ class Section(TenantModel):
         ),
     )
 
-    course_id: Mapped[uuid.UUID] = mapped_column(
+    course_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
-        nullable=False,
+        nullable=True,
     )
 
     semester_id: Mapped[uuid.UUID] = mapped_column(
