@@ -1,63 +1,50 @@
-"""
-Application entry point.
-
-This file's only job is to assemble the app: create the FastAPI instance,
-attach middleware (CORS), register global exception handlers, and mount
-the versioned API router. It intentionally contains no business logic —
-that discipline is what keeps main.py readable as the project grows
-across 24 phases.
-"""
-
-from fastapi import FastAPI, Request
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from sqlalchemy import text
 
-from app.api.v1.router import api_v1_router
-from app.config.settings import settings
-from app.core.exceptions import AppError
+from app.api.auth import router as auth_router
+from app.api.security_test import router as security_router
+from app.core.config import settings
+from app.db.session import engine
 
-app = FastAPI(
-    title=settings.APP_NAME,
-    version="0.1.0",
-    description="Smart University Academic Management System API — Phase 1 foundation.",
-)
+app = FastAPI(title=settings.app_name)
 
-# --- CORS ---
-# In development, we allow the local Vite dev server origin(s) defined in
-# .env (CORS_ORIGINS). In production, this will be set to the real
-# deployed frontend URL(s) — never "*" — via the same environment
-# variable, with no code change required.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.cors_origins_list,
+    allow_origins=[settings.frontend_url, "http://127.0.0.1:5173"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-
-# --- Global exception handling ---
-# Any AppError (or subclass, like NotFoundError) raised anywhere in the
-# app is converted into a consistent JSON error shape instead of a raw
-# 500 or an inconsistent ad hoc response.
-@app.exception_handler(AppError)
-def handle_app_error(request: Request, exc: AppError) -> JSONResponse:
-    return JSONResponse(
-        status_code=exc.status_code,
-        content={"detail": exc.message},
-    )
+app.include_router(auth_router, prefix="/api/v1")
+app.include_router(security_router, prefix="/api/v1")
 
 
-# --- Routers ---
-# Every actual endpoint lives under /api/v1, mounted here in one line.
-app.include_router(api_v1_router, prefix=settings.API_V1_PREFIX)
+def check_database():
+    try:
+        with engine.connect() as connection:
+            connection.execute(text("SELECT 1"))
+        return {"connected": True, "detail": "PostgreSQL connection successful"}
+    except Exception:
+        return {"connected": False, "detail": "Database connection failed"}
 
 
-@app.get("/")
-def root() -> dict:
-    """Unversioned root endpoint — just a friendly pointer to the real API."""
+@app.get("/health")
+def health():
     return {
-        "message": f"{settings.APP_NAME} is running.",
-        "docs": "/docs",
-        "health_check": f"{settings.API_V1_PREFIX}/health",
+        "status": "ok",
+        "service": settings.app_name,
+        "environment": settings.environment,
+        "database": check_database(),
+    }
+
+
+@app.get("/api/v1/health")
+def api_v1_health():
+    return {
+        "status": "ok",
+        "service": settings.app_name,
+        "environment": settings.environment,
+        "database": check_database(),
     }
