@@ -55,6 +55,12 @@ class AttendanceStatus(str, enum.Enum):
     LATE = "late"
     EXCUSED = "excused"
 
+class AttendanceSessionStatus(str, enum.Enum):
+    DRAFT = "draft"
+    OPEN = "open"
+    COMPLETED = "completed"
+    CANCELLED = "cancelled"
+
 
 class AssessmentType(str, enum.Enum):
     ASSIGNMENT = "assignment"
@@ -823,14 +829,51 @@ class Enrollment(TenantModel):
     status: Mapped[EnrollmentStatus] = mapped_column(Enum(EnrollmentStatus, name="enrollment_status", values_callable=lambda e: [i.value for i in e]), nullable=False, default=EnrollmentStatus.ENROLLED)
 
 
+class AttendanceSession(TenantModel):
+    __tablename__ = "attendance_sessions"
+
+    __table_args__ = (
+        UniqueConstraint("organization_id", "id", name="uq_attendance_sessions_org_id"),
+        ForeignKeyConstraint(
+            ["organization_id", "course_offering_id"],
+            ["course_offerings.organization_id", "course_offerings.id"],
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["organization_id", "created_by_user_id"],
+            ["users.organization_id", "users.id"],
+            ondelete="RESTRICT",
+        ),
+        UniqueConstraint(
+            "organization_id",
+            "course_offering_id",
+            "session_date",
+            "start_time",
+            name="uq_attendance_session_context",
+        ),
+        Index("ix_attendance_sessions_org_offering_date", "organization_id", "course_offering_id", "session_date"),
+        Index("ix_attendance_sessions_org_date", "organization_id", "session_date"),
+    )
+
+    course_offering_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    session_date: Mapped[date] = mapped_column(Date, nullable=False)
+    start_time: Mapped[time | None] = mapped_column(Time)
+    end_time: Mapped[time | None] = mapped_column(Time)
+    topic: Mapped[str | None] = mapped_column(String(300))
+    notes: Mapped[str | None] = mapped_column(Text)
+    status: Mapped[AttendanceSessionStatus] = mapped_column(String(20), nullable=False, default=AttendanceSessionStatus.OPEN)
+    created_by_user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+
+
 class AttendanceRecord(TenantModel):
     __tablename__ = "attendance_records"
 
     __table_args__ = (
-        UniqueConstraint(
-            "organization_id",
-            "id",
-            name="uq_attendance_records_org_id",
+        UniqueConstraint("organization_id", "id", name="uq_attendance_records_org_id"),
+        ForeignKeyConstraint(
+            ["organization_id", "attendance_session_id"],
+            ["attendance_sessions.organization_id", "attendance_sessions.id"],
+            ondelete="CASCADE",
         ),
         ForeignKeyConstraint(
             ["organization_id", "enrollment_id"],
@@ -838,53 +881,37 @@ class AttendanceRecord(TenantModel):
             ondelete="RESTRICT",
         ),
         ForeignKeyConstraint(
-            ["organization_id", "recorded_by_user_id"],
+            ["organization_id", "marked_by_user_id"],
             ["users.organization_id", "users.id"],
             ondelete="RESTRICT",
         ),
         UniqueConstraint(
             "organization_id",
+            "attendance_session_id",
             "enrollment_id",
-            "attendance_date",
-            name="uq_attendance_enrollment_date",
+            name="uq_attendance_session_enrollment",
         ),
-        Index(
-            "ix_attendance_org_enrollment_date",
-            "organization_id",
-            "enrollment_id",
-            "attendance_date",
-        ),
+        Index("ix_attendance_records_org_session", "organization_id", "attendance_session_id"),
+        Index("ix_attendance_records_org_enrollment", "organization_id", "enrollment_id"),
+        Index("ix_attendance_records_org_status", "organization_id", "status"),
     )
 
-    enrollment_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
-        nullable=False,
-    )
-
-    attendance_date: Mapped[date] = mapped_column(
-        Date,
-        nullable=False,
-    )
-
+    attendance_session_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    enrollment_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
     status: Mapped[AttendanceStatus] = mapped_column(
         Enum(
             AttendanceStatus,
             name="attendance_status",
-            values_callable=lambda enum_cls: [
-                item.value for item in enum_cls
-            ],
+            values_callable=lambda enum_cls: [item.value for item in enum_cls],
+            create_type=False,
         ),
         nullable=False,
     )
-
-    recorded_by_user_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
-        nullable=False,
+    remarks: Mapped[str | None] = mapped_column(Text)
+    marked_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
     )
-
-    note: Mapped[str | None] = mapped_column(
-        Text,
-    )
+    marked_by_user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
 
 
 class Assessment(TenantModel):

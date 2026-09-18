@@ -8,132 +8,86 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.db.tenant import get_current_organization_id
-
 from app.models import (
-    Course,
-    CoursePrerequisite,
-    ProgramCourse,
-    CourseOffering,
-    Enrollment,
-    Department,
-    Program,
-    Semester,
     AcademicSession,
+    Course,
+    CourseOffering,
+    Department,
+    Enrollment,
+    Program,
     Section,
-    Teacher,
+    Semester,
     Student,
-    EnrollmentStatus,
+    Teacher,
 )
+from app.models.user import User, UserRole
 
-from app.models.academic import CourseType
+MANAGE_ROLES = {
+    UserRole.UNIVERSITY_ADMIN,
+}
 
 
-MANAGE_ROLES = {"university_admin"}
-
-
-# ============================================================
-# TENANT
-# ============================================================
-
-def oid() -> UUID:
-    value = get_current_organization_id()
-
-    if value is None:
+def ensure_org_user(user: User) -> UUID:
+    if user.organization_id is None:
         raise HTTPException(
             status_code=403,
             detail="Organization membership required",
         )
 
-    return value
+    return user.organization_id
 
 
-# ============================================================
-# GENERAL HELPERS
-# ============================================================
-
-def fail(name: str):
-    raise HTTPException(
-        status_code=404,
-        detail=f"{name} not found",
-    )
-
-
-def scoped(
-    db: Session,
-    model,
-    ident: UUID,
-):
-    return db.scalar(
-        select(model).where(
-            model.organization_id == oid(),
-            model.id == ident,
-        )
-    )
-
-
-def list_scoped(
-    db: Session,
-    model,
-):
-    """
-    Return tenant-scoped records.
-
-    Courses use soft deletion, so archived courses are excluded
-    from the normal course listing.
-
-    Other models keep the existing behavior.
-    """
-
-    statement = select(model).where(
-        model.organization_id == oid()
-    )
-
-    # Courses are soft-deleted.
-    # Archived courses should not appear in the normal list.
-    if model is Course:
-        statement = statement.where(
-            Course.is_active.is_(True)
+def require_manage(user: User) -> UUID:
+    if user.role not in MANAGE_ROLES:
+        raise HTTPException(
+            status_code=403,
+            detail="Organization administration permission required",
         )
 
-    statement = statement.order_by(
-        model.created_at.desc()
-    )
-
-    return list(
-        db.scalars(statement).all()
-    )
-
-
-def get_or_404(
-    db: Session,
-    model,
-    ident: UUID,
-    name: str,
-):
-    obj = scoped(
-        db,
-        model,
-        ident,
-    )
-
-    if obj is None:
-        fail(name)
-
-    return obj
+    return ensure_org_user(user)
 
 
 def commit(db: Session):
     try:
         db.commit()
-
-    except IntegrityError as e:
+    except IntegrityError as exc:
         db.rollback()
-
         raise HTTPException(
             status_code=409,
             detail="Operation violates a database constraint",
-        ) from e
+        ) from exc
+
+
+def list_scoped(
+    db: Session,
+    model,
+    organization_id: UUID,
+):
+    return list(
+        db.scalars(
+            select(model)
+            .where(
+                model.organization_id == organization_id
+            )
+            .order_by(
+                model.created_at.desc()
+            )
+        ).all()
+    )
+
+
+def get_scoped(
+    db: Session,
+    model,
+    item_id: UUID,
+    organization_id: UUID,
+):
+    return db.scalar(
+        select(model).where(
+            model.id == item_id,
+            model.organization_id == organization_id,
+        )
+    )
 
 
 # ============================================================
@@ -142,308 +96,99 @@ def commit(db: Session):
 
 def create_course(
     db: Session,
-    p,
+    payload,
+    organization_id: UUID,
 ):
-    data = p.model_dump()
-
-    get_or_404(
+    department = get_scoped(
         db,
         Department,
-        data["department_id"],
-        "Department",
+        payload.department_id,
+        organization_id,
     )
 
-    course = Course(
-        organization_id=oid(),
-        **data,
+    if department is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Department not found",
+        )
+
+    item = Course(
+        organization_id=organization_id,
+        **payload.model_dump(),
     )
 
-    db.add(course)
-
+    db.add(item)
     commit(db)
+    db.refresh(item)
 
-    db.refresh(course)
-
-    return course
+    return item
 
 
 def update_course(
     db: Session,
-    course_id: UUID,
-    p,
+    item_id: UUID,
+    payload,
+    organization_id: UUID,
 ):
-    course = get_or_404(
+    item = get_scoped(
         db,
         Course,
-        course_id,
-        "Course",
+        item_id,
+        organization_id,
     )
 
-    data = p.model_dump(
+    if item is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Course not found",
+        )
+
+    data = payload.model_dump(
         exclude_unset=True
     )
 
     if "department_id" in data:
-        get_or_404(
+        department = get_scoped(
             db,
             Department,
             data["department_id"],
-            "Department",
+            organization_id,
         )
+
+        if department is None:
+            raise HTTPException(
+                status_code=404,
+                detail="Department not found",
+            )
 
     for key, value in data.items():
-        setattr(
-            course,
-            key,
-            value,
-        )
+        setattr(item, key, value)
 
     commit(db)
+    db.refresh(item)
 
-    db.refresh(course)
-
-    return course
+    return item
 
 
-def archive_course(
+def delete_course(
     db: Session,
-    course_id: UUID,
+    item_id: UUID,
+    organization_id: UUID,
 ):
-    course = get_or_404(
+    item = get_scoped(
         db,
         Course,
-        course_id,
-        "Course",
+        item_id,
+        organization_id,
     )
 
-    course.is_active = False
-
-    commit(db)
-
-
-# ============================================================
-# COURSE PREREQUISITES
-# ============================================================
-
-def add_prereq(
-    db: Session,
-    course_id: UUID,
-    p,
-):
-    course = get_or_404(
-        db,
-        Course,
-        course_id,
-        "Course",
-    )
-
-    prerequisite_course = get_or_404(
-        db,
-        Course,
-        p.prerequisite_course_id,
-        "Prerequisite course",
-    )
-
-    if course.id == prerequisite_course.id:
+    if item is None:
         raise HTTPException(
-            status_code=400,
-            detail="A course cannot be its own prerequisite",
+            status_code=404,
+            detail="Course not found",
         )
 
-    prerequisite = CoursePrerequisite(
-        organization_id=oid(),
-        course_id=course.id,
-        prerequisite_course_id=prerequisite_course.id,
-    )
-
-    db.add(prerequisite)
-
-    commit(db)
-
-    db.refresh(prerequisite)
-
-    return prerequisite
-
-
-def list_prereq(
-    db: Session,
-    course_id: UUID,
-):
-    get_or_404(
-        db,
-        Course,
-        course_id,
-        "Course",
-    )
-
-    return list(
-        db.scalars(
-            select(CoursePrerequisite)
-            .where(
-                CoursePrerequisite.organization_id == oid(),
-                CoursePrerequisite.course_id == course_id,
-            )
-        ).all()
-    )
-
-
-def remove_prereq(
-    db: Session,
-    prerequisite_id: UUID,
-):
-    prerequisite = get_or_404(
-        db,
-        CoursePrerequisite,
-        prerequisite_id,
-        "Prerequisite",
-    )
-
-    db.delete(prerequisite)
-
-    commit(db)
-
-
-# ============================================================
-# PROGRAM CURRICULUM
-# ============================================================
-
-def add_curriculum(
-    db: Session,
-    program_id: UUID,
-    p,
-):
-    program = get_or_404(
-        db,
-        Program,
-        program_id,
-        "Program",
-    )
-
-    course = get_or_404(
-        db,
-        Course,
-        p.course_id,
-        "Course",
-    )
-
-    if p.recommended_semester_id:
-        get_or_404(
-            db,
-            Semester,
-            p.recommended_semester_id,
-            "Semester",
-        )
-
-    curriculum = ProgramCourse(
-        organization_id=oid(),
-        program_id=program.id,
-        **p.model_dump(),
-    )
-
-    db.add(curriculum)
-
-    commit(db)
-
-    db.refresh(curriculum)
-
-    return curriculum
-
-
-def list_curriculum(
-    db: Session,
-    program_id: UUID,
-):
-    get_or_404(
-        db,
-        Program,
-        program_id,
-        "Program",
-    )
-
-    return list(
-        db.scalars(
-            select(ProgramCourse)
-            .where(
-                ProgramCourse.organization_id == oid(),
-                ProgramCourse.program_id == program_id,
-            )
-            .order_by(
-                ProgramCourse.sort_order,
-                ProgramCourse.created_at,
-            )
-        ).all()
-    )
-
-
-def update_curriculum(
-    db: Session,
-    curriculum_id: UUID,
-    p,
-):
-    curriculum = get_or_404(
-        db,
-        ProgramCourse,
-        curriculum_id,
-        "Curriculum entry",
-    )
-
-    data = p.model_dump(
-        exclude_unset=True
-    )
-
-    if (
-        "recommended_semester_id" in data
-        and data["recommended_semester_id"]
-    ):
-        get_or_404(
-            db,
-            Semester,
-            data["recommended_semester_id"],
-            "Semester",
-        )
-
-    if "course_id" in data:
-        get_or_404(
-            db,
-            Course,
-            data["course_id"],
-            "Course",
-        )
-
-    if "program_id" in data:
-        get_or_404(
-            db,
-            Program,
-            data["program_id"],
-            "Program",
-        )
-
-    for key, value in data.items():
-        setattr(
-            curriculum,
-            key,
-            value,
-        )
-
-    commit(db)
-
-    db.refresh(curriculum)
-
-    return curriculum
-
-
-def remove_curriculum(
-    db: Session,
-    curriculum_id: UUID,
-):
-    curriculum = get_or_404(
-        db,
-        ProgramCourse,
-        curriculum_id,
-        "Curriculum entry",
-    )
-
-    db.delete(curriculum)
+    item.is_active = False
 
     commit(db)
 
@@ -454,96 +199,78 @@ def remove_curriculum(
 
 def validate_offering_relations(
     db: Session,
-    data: dict,
+    course_id: UUID,
+    section_id: UUID,
+    academic_session_id: UUID,
+    semester_id: UUID,
+    teacher_id: UUID | None,
+    organization_id: UUID,
 ):
-    course = get_or_404(
+    course = get_scoped(
         db,
         Course,
-        data["course_id"],
-        "Course",
+        course_id,
+        organization_id,
     )
 
-    section = get_or_404(
+    if course is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Course not found",
+        )
+
+    section = get_scoped(
         db,
         Section,
-        data["section_id"],
-        "Section",
+        section_id,
+        organization_id,
     )
 
-    academic_session = get_or_404(
+    if section is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Section not found",
+        )
+
+    academic_session = get_scoped(
         db,
         AcademicSession,
-        data["academic_session_id"],
-        "Academic session",
+        academic_session_id,
+        organization_id,
     )
 
-    semester = get_or_404(
+    if academic_session is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Academic session not found",
+        )
+
+    semester = get_scoped(
         db,
         Semester,
-        data["semester_id"],
-        "Semester",
+        semester_id,
+        organization_id,
     )
 
-    # Semester must belong to selected academic session.
-    if semester.academic_session_id != academic_session.id:
+    if semester is None:
         raise HTTPException(
-            status_code=400,
-            detail="Semester does not belong to the academic session",
+            status_code=404,
+            detail="Semester not found",
         )
 
-    # Section must belong to selected semester.
-    if section.semester_id != semester.id:
-        raise HTTPException(
-            status_code=400,
-            detail="Section does not belong to the selected semester",
-        )
-
-    # Legacy section/course compatibility.
-    if (
-        section.course_id is not None
-        and section.course_id != course.id
-    ):
-        raise HTTPException(
-            status_code=400,
-            detail=(
-                "Section is already associated "
-                "with a different legacy course"
-            ),
-        )
-
-    # Teacher validation.
-    if data.get("teacher_id") is not None:
-        get_or_404(
+    if teacher_id is not None:
+        teacher = get_scoped(
             db,
             Teacher,
-            data["teacher_id"],
-            "Teacher",
+            teacher_id,
+            organization_id,
         )
 
-    # All required academic entities must be active.
-    if not course.is_active:
-        raise HTTPException(
-            status_code=400,
-            detail="Course, section, session and semester must be active",
-        )
-
-    if not section.is_active:
-        raise HTTPException(
-            status_code=400,
-            detail="Course, section, session and semester must be active",
-        )
-
-    if not academic_session.is_active:
-        raise HTTPException(
-            status_code=400,
-            detail="Course, section, session and semester must be active",
-        )
-
-    if not semester.is_active:
-        raise HTTPException(
-            status_code=400,
-            detail="Course, section, session and semester must be active",
-        )
+        if teacher is None:
+            raise HTTPException(
+                status_code=404,
+                detail="Teacher not found",
+            )
 
     return (
         course,
@@ -555,160 +282,149 @@ def validate_offering_relations(
 
 def create_offering(
     db: Session,
-    p,
+    payload,
+    organization_id: UUID,
 ):
-    data = p.model_dump()
-
     validate_offering_relations(
         db,
-        data,
+        payload.course_id,
+        payload.section_id,
+        payload.academic_session_id,
+        payload.semester_id,
+        payload.teacher_id,
+        organization_id,
     )
 
-    offering = CourseOffering(
-        organization_id=oid(),
-        **data,
+    item = CourseOffering(
+        organization_id=organization_id,
+        **payload.model_dump(),
     )
 
-    db.add(offering)
-
+    db.add(item)
     commit(db)
+    db.refresh(item)
 
-    db.refresh(offering)
+    return item
 
-    return offering
+
+def list_offerings(
+    db: Session,
+    organization_id: UUID,
+):
+    return list_scoped(
+        db,
+        CourseOffering,
+        organization_id,
+    )
+
+
+def get_offering(
+    db: Session,
+    item_id: UUID,
+    organization_id: UUID,
+):
+    return get_scoped(
+        db,
+        CourseOffering,
+        item_id,
+        organization_id,
+    )
 
 
 def update_offering(
     db: Session,
-    offering_id: UUID,
-    p,
+    item_id: UUID,
+    payload,
+    organization_id: UUID,
 ):
-    offering = get_or_404(
+    item = get_scoped(
         db,
         CourseOffering,
-        offering_id,
-        "Course offering",
+        item_id,
+        organization_id,
     )
 
-    data = p.model_dump(
+    if item is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Course offering not found",
+        )
+
+    data = payload.model_dump(
         exclude_unset=True
     )
 
-    merged = {
-        key: getattr(offering, key)
-        for key in [
-            "course_id",
-            "section_id",
-            "academic_session_id",
-            "semester_id",
-            "teacher_id",
-            "max_students",
-        ]
-    }
+    course_id = data.get(
+        "course_id",
+        item.course_id,
+    )
 
-    merged.update(
-        {
-            key: value
-            for key, value in data.items()
-            if key != "is_active"
-        }
+    section_id = data.get(
+        "section_id",
+        item.section_id,
+    )
+
+    academic_session_id = data.get(
+        "academic_session_id",
+        item.academic_session_id,
+    )
+
+    semester_id = data.get(
+        "semester_id",
+        item.semester_id,
+    )
+
+    teacher_id = data.get(
+        "teacher_id",
+        item.teacher_id,
     )
 
     validate_offering_relations(
         db,
-        merged,
+        course_id,
+        section_id,
+        academic_session_id,
+        semester_id,
+        teacher_id,
+        organization_id,
     )
 
     for key, value in data.items():
-        setattr(
-            offering,
-            key,
-            value,
-        )
+        setattr(item, key, value)
 
     commit(db)
+    db.refresh(item)
 
-    db.refresh(offering)
-
-    return offering
+    return item
 
 
-def archive_offering(
+# ============================================================
+# STUDENTS
+# ============================================================
+
+def list_students(
     db: Session,
-    offering_id: UUID,
+    organization_id: UUID,
 ):
-    offering = get_or_404(
+    return list_scoped(
         db,
-        CourseOffering,
-        offering_id,
-        "Course offering",
-    )
-
-    offering.is_active = False
-
-    commit(db)
-
-
-def list_offerings_for_user(
-    db: Session,
-    user,
-):
-    # Administrators and teachers can see all tenant offerings.
-    if user.role.value != "student":
-        return list_scoped(
-            db,
-            CourseOffering,
-        )
-
-    student = _student_for_user(
-        db,
-        user,
-    )
-
-    if student is None:
-        return []
-
-    return list(
-        db.scalars(
-            select(CourseOffering)
-            .join(
-                Section,
-                (
-                    Section.organization_id
-                    == CourseOffering.organization_id
-                )
-                & (
-                    Section.id
-                    == CourseOffering.section_id
-                ),
-            )
-            .where(
-                CourseOffering.organization_id == oid(),
-                CourseOffering.is_active.is_(True),
-                Section.program_id == student.program_id,
-                CourseOffering.academic_session_id
-                == student.academic_session_id,
-            )
-            .order_by(
-                CourseOffering.created_at.desc()
-            )
-        ).all()
+        Student,
+        organization_id,
     )
 
 
 # ============================================================
-# STUDENTS / TEACHERS
+# TEACHERS
 # ============================================================
 
-def _student_for_user(
+def list_teachers(
     db: Session,
-    user,
+    organization_id: UUID,
 ):
-    return db.scalar(
-        select(Student).where(
-            Student.organization_id == oid(),
-            Student.user_id == user.id,
-        )
+    return list_scoped(
+        db,
+        Teacher,
+        organization_id,
     )
 
 
@@ -716,249 +432,160 @@ def _student_for_user(
 # ENROLLMENTS
 # ============================================================
 
-def create_enrollment(
-    db: Session,
-    p,
-    user,
-    admin: bool = False,
-):
-    # --------------------------------------------------------
-    # Determine student
-    # --------------------------------------------------------
-
-    if not admin:
-        student = _student_for_user(
-            db,
-            user,
-        )
-
-        if student is None:
-            raise HTTPException(
-                status_code=403,
-                detail="Student profile is required for enrollment",
-            )
-
-        student_id = student.id
-
-        if (
-            p.student_id is not None
-            and p.student_id != student_id
-        ):
-            raise HTTPException(
-                status_code=403,
-                detail="Students may only enroll themselves",
-            )
-
-    else:
-        if p.student_id is None:
-            raise HTTPException(
-                status_code=422,
-                detail=(
-                    "student_id is required "
-                    "for administrator enrollment"
-                ),
-            )
-
-        student_id = p.student_id
-
-    student = get_or_404(
-        db,
-        Student,
-        student_id,
-        "Student",
-    )
-
-    # --------------------------------------------------------
-    # Lock offering row while checking capacity
-    # --------------------------------------------------------
-
-    offering = db.scalar(
-        select(CourseOffering)
-        .where(
-            CourseOffering.organization_id == oid(),
-            CourseOffering.id == p.course_offering_id,
-        )
-        .with_for_update()
-    )
-
-    if offering is None:
-        fail("Course offering")
-
-    # --------------------------------------------------------
-    # Validate student
-    # --------------------------------------------------------
-
-    if student.status.value != "active":
-        raise HTTPException(
-            status_code=400,
-            detail="Inactive students cannot enroll",
-        )
-
-    if not offering.is_active:
-        raise HTTPException(
-            status_code=400,
-            detail="Course offering is not active",
-        )
-
-    section = get_or_404(
-        db,
-        Section,
-        offering.section_id,
-        "Section",
-    )
-
-    # Student program must match section program.
-    if student.program_id != section.program_id:
-        raise HTTPException(
-            status_code=400,
-            detail=(
-                "Student program does not match "
-                "the course offering section"
-            ),
-        )
-
-    # Student academic session must match offering.
-    if (
-        student.academic_session_id
-        != offering.academic_session_id
-    ):
-        raise HTTPException(
-            status_code=400,
-            detail=(
-                "Student academic session does not "
-                "match the offering"
-            ),
-        )
-
-    # --------------------------------------------------------
-    # Duplicate enrollment check
-    # --------------------------------------------------------
-
-    existing = db.scalar(
-        select(Enrollment).where(
-            Enrollment.organization_id == oid(),
-            Enrollment.student_id == student_id,
-            Enrollment.course_offering_id
-            == offering.id,
-        )
-    )
-
-    if existing:
-        raise HTTPException(
-            status_code=409,
-            detail=(
-                "Student is already enrolled "
-                "in this course offering"
-            ),
-        )
-
-    # --------------------------------------------------------
-    # Capacity check
-    # --------------------------------------------------------
-
-    if offering.max_students is not None:
-        count = db.scalar(
-            select(func.count())
-            .select_from(Enrollment)
-            .where(
-                Enrollment.organization_id == oid(),
-                Enrollment.course_offering_id
-                == offering.id,
-                Enrollment.status
-                == EnrollmentStatus.ENROLLED,
-            )
-        ) or 0
-
-        if count >= offering.max_students:
-            raise HTTPException(
-                status_code=409,
-                detail="Course offering capacity has been reached",
-            )
-
-    # --------------------------------------------------------
-    # Create enrollment
-    # --------------------------------------------------------
-
-    enrollment = Enrollment(
-        organization_id=oid(),
-        student_id=student_id,
-        course_offering_id=offering.id,
-    )
-
-    db.add(enrollment)
-
-    commit(db)
-
-    db.refresh(enrollment)
-
-    return enrollment
-
-
 def list_enrollments(
     db: Session,
-    student_id: UUID | None = None,
-    offering_id: UUID | None = None,
+    organization_id: UUID,
 ):
-    statement = select(Enrollment).where(
-        Enrollment.organization_id == oid()
-    )
-
-    if student_id:
-        statement = statement.where(
-            Enrollment.student_id == student_id
-        )
-
-    if offering_id:
-        statement = statement.where(
-            Enrollment.course_offering_id
-            == offering_id
-        )
-
-    statement = statement.order_by(
-        Enrollment.created_at.desc()
-    )
-
-    return list(
-        db.scalars(statement).all()
+    return list_scoped(
+        db,
+        Enrollment,
+        organization_id,
     )
 
 
 def get_enrollment(
     db: Session,
-    enrollment_id: UUID,
+    item_id: UUID,
+    organization_id: UUID,
 ):
-    return get_or_404(
+    return get_scoped(
         db,
         Enrollment,
-        enrollment_id,
-        "Enrollment",
+        item_id,
+        organization_id,
     )
 
 
-def update_enrollment(
+def create_enrollment(
     db: Session,
-    enrollment_id: UUID,
-    p,
+    payload,
+    organization_id: UUID,
+    current_user: User,
 ):
-    enrollment = get_enrollment(
+    student_id = payload.student_id
+
+    # If student_id is not supplied, try to use
+    # the Student record connected to the logged-in user.
+    if student_id is None:
+        student = db.scalar(
+            select(Student).where(
+                Student.organization_id == organization_id,
+                Student.user_id == current_user.id,
+            )
+        )
+
+        if student is None:
+            raise HTTPException(
+                status_code=400,
+                detail="Student ID is required for this user",
+            )
+
+        student_id = student.id
+
+    else:
+        student = get_scoped(
+            db,
+            Student,
+            student_id,
+            organization_id,
+        )
+
+        if student is None:
+            raise HTTPException(
+                status_code=404,
+                detail="Student not found",
+            )
+
+    offering = get_scoped(
         db,
-        enrollment_id,
+        CourseOffering,
+        payload.course_offering_id,
+        organization_id,
     )
 
-    enrollment.status = p.status
-
-    if p.status in {
-        EnrollmentStatus.DROPPED,
-        EnrollmentStatus.WITHDRAWN,
-    }:
-        enrollment.dropped_at = datetime.now(
-            timezone.utc
+    if offering is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Course offering not found",
         )
+
+    if not offering.is_active:
+        raise HTTPException(
+            status_code=400,
+            detail="Course offering is inactive",
+        )
+
+    # Check maximum enrollment capacity.
+    if offering.max_students is not None:
+        current_count = db.scalar(
+            select(func.count(Enrollment.id)).where(
+                Enrollment.organization_id == organization_id,
+                Enrollment.course_offering_id == offering.id,
+                Enrollment.status == "enrolled",
+            )
+        )
+
+        if current_count >= offering.max_students:
+            raise HTTPException(
+                status_code=409,
+                detail="Course offering has reached its maximum capacity",
+            )
+
+    # Prevent duplicate enrollment.
+    existing = db.scalar(
+        select(Enrollment).where(
+            Enrollment.organization_id == organization_id,
+            Enrollment.student_id == student_id,
+            Enrollment.course_offering_id == offering.id,
+        )
+    )
+
+    if existing is not None:
+        raise HTTPException(
+            status_code=409,
+            detail="Student is already enrolled in this course offering",
+        )
+
+    item = Enrollment(
+        organization_id=organization_id,
+        student_id=student_id,
+        course_offering_id=payload.course_offering_id,
+    )
+
+    db.add(item)
+    commit(db)
+    db.refresh(item)
+
+    return item
+
+
+def update_enrollment_status(
+    db: Session,
+    item_id: UUID,
+    payload,
+    organization_id: UUID,
+):
+    item = get_scoped(
+        db,
+        Enrollment,
+        item_id,
+        organization_id,
+    )
+
+    if item is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Enrollment not found",
+        )
+
+    item.status = payload.status
+
+    if payload.status.value == "dropped":
+        item.dropped_at = datetime.now(timezone.utc)
     else:
-        enrollment.dropped_at = None
+        item.dropped_at = None
 
     commit(db)
+    db.refresh(item)
 
-    db.refresh(enrollment)
-
-    return enrollment
+    return item

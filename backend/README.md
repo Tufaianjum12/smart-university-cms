@@ -25,3 +25,40 @@ Never run the development seed against production.
 
 ## Phase 5
 Run `alembic upgrade head`, then `python seed_dev.py`. Phase 5 adds courses, prerequisites, program curriculum, course offerings and enrollment. Use the development seed only in a development database.
+
+
+## Phase 6 — Attendance Management
+
+Phase 6 adds session-based, multi-tenant attendance management.
+
+### Attendance rule
+
+- PRESENT = attended
+- LATE = attended
+- ABSENT = counted against attendance
+- EXCUSED = excluded from the attendance denominator
+- CANCELLED sessions = excluded
+
+Official attendance percentage is calculated by the FastAPI backend with decimal precision.
+
+### Main API routes
+
+- `POST /api/v1/attendance/sessions`
+- `GET /api/v1/attendance/sessions`
+- `GET /api/v1/attendance/sessions/{session_id}`
+- `PATCH /api/v1/attendance/sessions/{session_id}`
+- `GET /api/v1/attendance/sessions/{session_id}/enrollments`
+- `POST /api/v1/attendance/sessions/{session_id}/records`
+- `GET /api/v1/attendance/sessions/{session_id}/records`
+- `PATCH /api/v1/attendance/records/{record_id}`
+- `GET /api/v1/attendance/course-offerings/{offering_id}/summary`
+- `GET /api/v1/attendance/student/me`
+- `GET /api/v1/attendance/student/me/{offering_id}`
+
+Run the migration with:
+
+```bash
+alembic upgrade head
+```
+
+Phase 6 intentionally does not implement Phase 7 attendance prediction, recovery calculations, warnings, notifications, or AI analysis.

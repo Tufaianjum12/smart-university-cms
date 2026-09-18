@@ -6,6 +6,7 @@ from app.api.auth import router as auth_router
 from app.api.security_test import router as security_router
 from app.api.v1.cms import router as cms_router
 from app.api.v1.courses import router as courses_router
+from app.api.v1.attendance import router as attendance_router
 from app.core.config import settings
 from app.db.session import engine
 
@@ -23,6 +24,7 @@ app.include_router(auth_router, prefix="/api/v1")
 app.include_router(security_router, prefix="/api/v1")
 app.include_router(cms_router, prefix="/api/v1")
 app.include_router(courses_router, prefix="/api/v1")
+app.include_router(attendance_router, prefix="/api/v1")
 
 
 def check_database():

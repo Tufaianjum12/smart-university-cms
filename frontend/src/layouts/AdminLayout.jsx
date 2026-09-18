@@ -1,6 +1,64 @@
 import { NavLink, Outlet } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
-const links=[
- ["/admin","Dashboard","speedometer2"],["/admin/organization","Organization","building"],["/admin/campuses","Campuses","geo-alt"],["/admin/departments","Departments","diagram-3"],["/admin/programs","Programs","mortarboard"],["/admin/academic-sessions","Academic Sessions","calendar3"],["/admin/semesters","Semesters","layers"],["/admin/sections","Sections","people"],["/admin/classrooms","Classrooms","door-open"],["/admin/courses","Courses","book"],["/admin/course-offerings","Course Offerings","collection"],["/admin/enrollments","Enrollments","person-check"],["/admin/curriculum","Curriculum","list-check"],["/admin/prerequisites","Prerequisites","signpost-split"]
+
+const adminLinks = [
+  ["/admin", "Dashboard", "speedometer2"],
+  ["/admin/organization", "Organization", "building"],
+  ["/admin/campuses", "Campuses", "geo-alt"],
+  ["/admin/departments", "Departments", "diagram-3"],
+  ["/admin/programs", "Programs", "mortarboard"],
+  ["/admin/academic-sessions", "Academic Sessions", "calendar3"],
+  ["/admin/semesters", "Semesters", "layers"],
+  ["/admin/sections", "Sections", "people"],
+  ["/admin/classrooms", "Classrooms", "door-open"],
+  ["/admin/courses", "Courses", "book"],
+  ["/admin/course-offerings", "Course Offerings", "collection"],
+  ["/admin/enrollments", "Enrollments", "person-check"],
+  ["/admin/curriculum", "Curriculum", "list-check"],
+  ["/admin/prerequisites", "Prerequisites", "signpost-split"],
+  ["/admin/attendance", "Attendance", "calendar-check"],
 ];
-export default function AdminLayout(){const {user,logout}=useAuth();const superAdmin=user?.role==="super_admin";return <div className="min-vh-100 bg-light"><nav className="navbar navbar-dark bg-dark"><div className="container-fluid"><span className="navbar-brand"><i className="bi bi-mortarboard-fill me-2"/>Smart University CMS</span><div className="d-flex align-items-center gap-3 text-white"><span className="small">{user?.full_name} · {user?.role}</span><button onClick={logout} className="btn btn-outline-light btn-sm">Logout</button></div></div></nav><div className="container-fluid"><div className="row"><aside className="col-lg-2 border-end bg-white min-vh-100 py-3"><div className="nav flex-column gap-1">{superAdmin?<NavLink className="nav-link" to="/admin/organizations"><i className="bi bi-buildings me-2"/>Organizations</NavLink>:links.map(([to,label,icon])=><NavLink key={to} end={to==="/admin"} className={({isActive})=>`nav-link ${isActive?"active fw-semibold":""}`} to={to}><i className={`bi bi-${icon} me-2`}/>{label}</NavLink>)}</div></aside><main className="col-lg-10 py-4"><Outlet/></main></div></div></div>}
+
+export default function AdminLayout() {
+  const { user, logout } = useAuth();
+  const superAdmin = user?.role === "super_admin";
+  const teacher = user?.role === "teacher";
+
+  const links = teacher
+    ? [["/teacher/attendance", "Attendance", "calendar-check"]]
+    : adminLinks;
+
+  return (
+    <div className="min-vh-100 bg-light">
+      <nav className="navbar navbar-dark bg-dark">
+        <div className="container-fluid">
+          <span className="navbar-brand">
+            <i className="bi bi-mortarboard-fill me-2" />Smart University CMS
+          </span>
+          <div className="d-flex align-items-center gap-3 text-white">
+            <span className="small">{user?.full_name} · {user?.role}</span>
+            <button onClick={logout} className="btn btn-outline-light btn-sm">Logout</button>
+          </div>
+        </div>
+      </nav>
+      <div className="container-fluid">
+        <div className="row">
+          <aside className="col-lg-2 border-end bg-white min-vh-100 py-3">
+            <div className="nav flex-column gap-1">
+              {superAdmin ? (
+                <NavLink className="nav-link" to="/admin/organizations">
+                  <i className="bi bi-buildings me-2" />Organizations
+                </NavLink>
+              ) : links.map(([to, label, icon]) => (
+                <NavLink key={to} end={to === "/admin"} className={({ isActive }) => `nav-link ${isActive ? "active fw-semibold" : ""}`} to={to}>
+                  <i className={`bi bi-${icon} me-2`} />{label}
+                </NavLink>
+              ))}
+            </div>
+          </aside>
+          <main className="col-lg-10 py-4"><Outlet /></main>
+        </div>
+      </div>
+    </div>
+  );
+}
