@@ -2,7 +2,7 @@ from datetime import date, datetime, time
 from decimal import Decimal
 from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field
-from app.models.academic import AcademicStatus, EnrollmentStatus, AttendanceStatus, AssessmentType, NotificationType, TargetType
+from app.models.academic import AcademicStatus, CourseType, EnrollmentStatus, AttendanceStatus, AssessmentType, NotificationType, TargetType
 
 
 class TenantRead(BaseModel):
@@ -35,11 +35,12 @@ class CourseRead(TenantRead):
     title: str
     description: str | None
     credit_hours: Decimal
+    course_type: CourseType
     is_active: bool
 
 class EnrollmentRead(TenantRead):
     student_id: UUID
-    section_id: UUID
+    course_offering_id: UUID
     enrolled_at: datetime
     status: EnrollmentStatus
 

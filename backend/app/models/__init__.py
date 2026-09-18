@@ -1,9 +1,9 @@
 from app.models.organization import Organization, OrganizationSettings, OrganizationStatus, OrganizationType
 from app.models.user import User, UserStatus
 from app.models.academic import (
-    AcademicStatus, EnrollmentStatus, AttendanceStatus, AssessmentType, NotificationType, TargetType,
+    AcademicStatus, CourseType, EnrollmentStatus, AttendanceStatus, AssessmentType, NotificationType, TargetType,
     Campus, Department, Program, AcademicSession, Semester, Classroom,
-    Student, Teacher, Guardian, StudentGuardian, Course, CoursePrerequisite,
+    Student, Teacher, Guardian, StudentGuardian, Course, CoursePrerequisite, ProgramCourse, CourseOffering,
     Section, Enrollment, AttendanceRecord, Assessment, Grade, TimetableEntry,
     Notification, AcademicTarget,
 )

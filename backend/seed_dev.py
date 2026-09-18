@@ -292,6 +292,45 @@ def seed():
             db.flush()
 
         # ---------------------------------------------------------
+        # PHASE 5 ACADEMIC STRUCTURE
+        # ---------------------------------------------------------
+        sess_a.is_current = True
+        sess_b.is_current = True
+
+        section_a = db.scalar(select(Section).where(Section.organization_id == org_a.id, Section.section_code == "BSSE-A"))
+        if section_a is None:
+            section_a = Section(organization_id=org_a.id, semester_id=sem_a.id, program_id=prog_a.id, section_code="BSSE-A", capacity=40)
+            db.add(section_a); db.flush()
+        section_b = db.scalar(select(Section).where(Section.organization_id == org_b.id, Section.section_code == "BSCS-B"))
+        if section_b is None:
+            section_b = Section(organization_id=org_b.id, semester_id=sem_b.id, program_id=prog_b.id, section_code="BSCS-B", capacity=40)
+            db.add(section_b); db.flush()
+
+        def course_for(org_id, code, department_id, title, credits, ctype):
+            x = db.scalar(select(Course).where(Course.organization_id == org_id, Course.course_code == code))
+            if x is None:
+                x = Course(organization_id=org_id, department_id=department_id, course_code=code, title=title, credit_hours=credits, course_type=ctype)
+                db.add(x); db.flush()
+            return x
+
+        cs101 = course_for(org_a.id, "SE-101", dept_a.id, "Programming Fundamentals", 3, CourseType.CORE)
+        ds201 = course_for(org_a.id, "SE-201", dept_a.id, "Data Structures", 3, CourseType.CORE)
+        dbs301 = course_for(org_a.id, "SE-301", dept_a.id, "Database Systems", 3, CourseType.CORE)
+        b101 = course_for(org_b.id, "CS-101", dept_b.id, "Introduction to Computing", 3, CourseType.CORE)
+        b201 = course_for(org_b.id, "CS-201", dept_b.id, "Data Structures", 3, CourseType.CORE)
+
+        def prereq(course, prerequisite):
+            if db.scalar(select(CoursePrerequisite).where(CoursePrerequisite.organization_id == course.organization_id, CoursePrerequisite.course_id == course.id, CoursePrerequisite.prerequisite_course_id == prerequisite.id)) is None:
+                db.add(CoursePrerequisite(organization_id=course.organization_id, course_id=course.id, prerequisite_course_id=prerequisite.id))
+        prereq(ds201, cs101); prereq(dbs301, cs101)
+
+        def curriculum(program, course, semester):
+            if db.scalar(select(ProgramCourse).where(ProgramCourse.organization_id == program.organization_id, ProgramCourse.program_id == program.id, ProgramCourse.course_id == course.id)) is None:
+                db.add(ProgramCourse(organization_id=program.organization_id, program_id=program.id, course_id=course.id, recommended_semester_id=semester.id, is_required=True))
+        curriculum(prog_a, cs101, sem_a); curriculum(prog_a, ds201, sem_a); curriculum(prog_a, dbs301, sem_a)
+        curriculum(prog_b, b101, sem_b); curriculum(prog_b, b201, sem_b)
+
+        # ---------------------------------------------------------
         # USERS
         # ---------------------------------------------------------
 
@@ -428,6 +467,22 @@ def seed():
                     department_id=dept_b.id,
                 )
             )
+
+        db.flush()
+        teacher_record_a = db.scalar(select(Teacher).where(Teacher.organization_id == org_a.id, Teacher.user_id == teacher_a.id))
+        teacher_record_b = db.scalar(select(Teacher).where(Teacher.organization_id == org_b.id, Teacher.user_id == teacher_b.id))
+        def offering(org_id, course, section, sess, sem, teacher):
+            x=db.scalar(select(CourseOffering).where(CourseOffering.organization_id==org_id, CourseOffering.course_id==course.id, CourseOffering.section_id==section.id, CourseOffering.semester_id==sem.id))
+            if x is None:
+                x=CourseOffering(organization_id=org_id,course_id=course.id,section_id=section.id,academic_session_id=sess.id,semester_id=sem.id,teacher_id=teacher.id if teacher else None,max_students=section.capacity)
+                db.add(x); db.flush()
+            return x
+        off_a=offering(org_a.id,ds201,section_a,sess_a,sem_a,teacher_record_a)
+        off_b=offering(org_b.id,b201,section_b,sess_b,sem_b,teacher_record_b)
+        if db.scalar(select(Enrollment).where(Enrollment.organization_id==org_a.id,Enrollment.student_id==student_a.id,Enrollment.course_offering_id==off_a.id)) is None:
+            db.add(Enrollment(organization_id=org_a.id,student_id=student_a.id,course_offering_id=off_a.id))
+        if db.scalar(select(Enrollment).where(Enrollment.organization_id==org_b.id,Enrollment.student_id==student_b.id,Enrollment.course_offering_id==off_b.id)) is None:
+            db.add(Enrollment(organization_id=org_b.id,student_id=student_b.id,course_offering_id=off_b.id))
 
         # ---------------------------------------------------------
         # COMMIT

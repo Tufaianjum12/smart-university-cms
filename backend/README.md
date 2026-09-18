@@ -22,3 +22,6 @@ This is a Phase 2 backend package. It was generated separately because the actua
 6. Run tests with a separate database: `set TEST_DATABASE_URL=postgresql+psycopg://.../smart_university_cms_test` on Windows CMD, or `$env:TEST_DATABASE_URL="..."` in PowerShell, then `pytest -q`.
 
 Never run the development seed against production.
+
+## Phase 5
+Run `alembic upgrade head`, then `python seed_dev.py`. Phase 5 adds courses, prerequisites, program curriculum, course offerings and enrollment. Use the development seed only in a development database.

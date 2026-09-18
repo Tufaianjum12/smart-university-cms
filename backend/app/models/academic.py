@@ -33,6 +33,15 @@ class AcademicStatus(str, enum.Enum):
     WITHDRAWN = "withdrawn"
 
 
+class CourseType(str, enum.Enum):
+    CORE = "core"
+    ELECTIVE = "elective"
+    LAB = "lab"
+    THEORY = "theory"
+    PROJECT = "project"
+    OTHER = "other"
+
+
 class EnrollmentStatus(str, enum.Enum):
     ENROLLED = "enrolled"
     DROPPED = "dropped"
@@ -698,6 +707,12 @@ class Course(TenantModel):
         nullable=False,
     )
 
+    course_type: Mapped[CourseType] = mapped_column(
+        Enum(CourseType, name="course_type", values_callable=lambda e: [i.value for i in e]),
+        nullable=False,
+        default=CourseType.THEORY,
+    )
+
     description: Mapped[str | None] = mapped_column(
         Text,
     )
@@ -714,190 +729,98 @@ class Course(TenantModel):
     )
 
 
+class Section(TenantModel):
+    __tablename__ = "sections"
+    __table_args__ = (
+        UniqueConstraint("organization_id", "id", name="uq_sections_org_id"),
+        ForeignKeyConstraint(["organization_id", "course_id"], ["courses.organization_id", "courses.id"], ondelete="RESTRICT"),
+        ForeignKeyConstraint(["organization_id", "semester_id"], ["semesters.organization_id", "semesters.id"], ondelete="RESTRICT"),
+        ForeignKeyConstraint(["organization_id", "program_id"], ["programs.organization_id", "programs.id"], ondelete="RESTRICT"),
+        UniqueConstraint("organization_id", "semester_id", "course_id", "section_code", name="uq_section_offering"),
+        CheckConstraint("capacity IS NULL OR capacity > 0", name="ck_section_capacity"),
+        Index("ix_sections_org_semester", "organization_id", "semester_id"),
+        Index("ix_sections_org_course", "organization_id", "course_id"),
+        Index("ix_sections_org_program", "organization_id", "program_id"),
+    )
+    course_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    semester_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    program_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    section_code: Mapped[str] = mapped_column(String(40), nullable=False)
+    capacity: Mapped[int | None] = mapped_column(Integer)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+
+
 class CoursePrerequisite(TenantModel):
     __tablename__ = "course_prerequisites"
 
     __table_args__ = (
-        UniqueConstraint(
-            "organization_id",
-            "id",
-            name="uq_course_prerequisites_org_id",
-        ),
-        ForeignKeyConstraint(
-            ["organization_id", "course_id"],
-            ["courses.organization_id", "courses.id"],
-            ondelete="CASCADE",
-        ),
-        ForeignKeyConstraint(
-            ["organization_id", "prerequisite_course_id"],
-            ["courses.organization_id", "courses.id"],
-            ondelete="RESTRICT",
-        ),
-        UniqueConstraint(
-            "organization_id",
-            "course_id",
-            "prerequisite_course_id",
-            name="uq_course_prerequisite",
-        ),
-        CheckConstraint(
-            "course_id <> prerequisite_course_id",
-            name="ck_course_no_self_prerequisite",
-        ),
+        UniqueConstraint("organization_id", "id", name="uq_course_prerequisites_org_id"),
+        ForeignKeyConstraint(["organization_id", "course_id"], ["courses.organization_id", "courses.id"], ondelete="CASCADE"),
+        ForeignKeyConstraint(["organization_id", "prerequisite_course_id"], ["courses.organization_id", "courses.id"], ondelete="RESTRICT"),
+        UniqueConstraint("organization_id", "course_id", "prerequisite_course_id", name="uq_course_prerequisite"),
+        CheckConstraint("course_id <> prerequisite_course_id", name="ck_course_no_self_prerequisite"),
+        Index("ix_prereq_org_course", "organization_id", "course_id"),
     )
-
-    course_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
-        nullable=False,
-    )
-
-    prerequisite_course_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
-        nullable=False,
-    )
+    course_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    prerequisite_course_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
 
 
-class Section(TenantModel):
-    __tablename__ = "sections"
-
+class ProgramCourse(TenantModel):
+    __tablename__ = "program_courses"
     __table_args__ = (
-        UniqueConstraint(
-            "organization_id",
-            "id",
-            name="uq_sections_org_id",
-        ),
-        ForeignKeyConstraint(
-            ["organization_id", "course_id"],
-            ["courses.organization_id", "courses.id"],
-            ondelete="RESTRICT",
-        ),
-        ForeignKeyConstraint(
-            ["organization_id", "semester_id"],
-            ["semesters.organization_id", "semesters.id"],
-            ondelete="RESTRICT",
-        ),
-        ForeignKeyConstraint(
-            ["organization_id", "program_id"],
-            ["programs.organization_id", "programs.id"],
-            ondelete="RESTRICT",
-        ),
-        UniqueConstraint(
-            "organization_id",
-            "semester_id",
-            "course_id",
-            "section_code",
-            name="uq_section_offering",
-        ),
-        CheckConstraint(
-            "capacity IS NULL OR capacity > 0",
-            name="ck_section_capacity",
-        ),
-        Index(
-            "ix_sections_org_semester",
-            "organization_id",
-            "semester_id",
-        ),
-        Index(
-            "ix_sections_org_course",
-            "organization_id",
-            "course_id",
-        ),
+        UniqueConstraint("organization_id", "id", name="uq_program_courses_org_id"),
+        ForeignKeyConstraint(["organization_id", "program_id"], ["programs.organization_id", "programs.id"], ondelete="CASCADE"),
+        ForeignKeyConstraint(["organization_id", "course_id"], ["courses.organization_id", "courses.id"], ondelete="RESTRICT"),
+        ForeignKeyConstraint(["organization_id", "recommended_semester_id"], ["semesters.organization_id", "semesters.id"], ondelete="RESTRICT"),
+        UniqueConstraint("organization_id", "program_id", "course_id", name="uq_program_course"),
+        Index("ix_program_courses_org_program", "organization_id", "program_id"),
     )
+    program_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    course_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    recommended_semester_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    is_required: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
-    course_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True),
-        nullable=True,
-    )
 
-    semester_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
-        nullable=False,
+class CourseOffering(TenantModel):
+    __tablename__ = "course_offerings"
+    __table_args__ = (
+        UniqueConstraint("organization_id", "id", name="uq_course_offerings_org_id"),
+        ForeignKeyConstraint(["organization_id", "course_id"], ["courses.organization_id", "courses.id"], ondelete="RESTRICT"),
+        ForeignKeyConstraint(["organization_id", "section_id"], ["sections.organization_id", "sections.id"], ondelete="RESTRICT"),
+        ForeignKeyConstraint(["organization_id", "academic_session_id"], ["academic_sessions.organization_id", "academic_sessions.id"], ondelete="RESTRICT"),
+        ForeignKeyConstraint(["organization_id", "semester_id"], ["semesters.organization_id", "semesters.id"], ondelete="RESTRICT"),
+        ForeignKeyConstraint(["organization_id", "teacher_id"], ["teachers.organization_id", "teachers.id"], ondelete="RESTRICT"),
+        UniqueConstraint("organization_id", "course_id", "section_id", "semester_id", name="uq_course_offering_context"),
+        CheckConstraint("max_students IS NULL OR max_students > 0", name="ck_offering_capacity"),
+        Index("ix_offerings_org_course", "organization_id", "course_id"),
+        Index("ix_offerings_org_section", "organization_id", "section_id"),
+        Index("ix_offerings_org_teacher", "organization_id", "teacher_id"),
     )
-
-    program_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True),
-        nullable=True,
-    )
-
-    section_code: Mapped[str] = mapped_column(
-        String(40),
-        nullable=False,
-    )
-
-    capacity: Mapped[int | None] = mapped_column(
-        Integer,
-    )
-
-    is_active: Mapped[bool] = mapped_column(
-        Boolean,
-        nullable=False,
-        default=True,
-    )
+    course_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    section_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    academic_session_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    semester_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    teacher_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    max_students: Mapped[int | None] = mapped_column(Integer)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
 
 
 class Enrollment(TenantModel):
     __tablename__ = "enrollments"
-
     __table_args__ = (
-        UniqueConstraint(
-            "organization_id",
-            "id",
-            name="uq_enrollments_org_id",
-        ),
-        ForeignKeyConstraint(
-            ["organization_id", "student_id"],
-            ["students.organization_id", "students.id"],
-            ondelete="RESTRICT",
-        ),
-        ForeignKeyConstraint(
-            ["organization_id", "section_id"],
-            ["sections.organization_id", "sections.id"],
-            ondelete="RESTRICT",
-        ),
-        UniqueConstraint(
-            "organization_id",
-            "student_id",
-            "section_id",
-            name="uq_enrollment_student_section",
-        ),
-        Index(
-            "ix_enrollments_org_student",
-            "organization_id",
-            "student_id",
-        ),
-        Index(
-            "ix_enrollments_org_section",
-            "organization_id",
-            "section_id",
-        ),
+        UniqueConstraint("organization_id", "id", name="uq_enrollments_org_id"),
+        ForeignKeyConstraint(["organization_id", "student_id"], ["students.organization_id", "students.id"], ondelete="RESTRICT"),
+        ForeignKeyConstraint(["organization_id", "course_offering_id"], ["course_offerings.organization_id", "course_offerings.id"], ondelete="RESTRICT"),
+        UniqueConstraint("organization_id", "student_id", "course_offering_id", name="uq_enrollment_student_offering"),
+        Index("ix_enrollments_org_student", "organization_id", "student_id"),
+        Index("ix_enrollments_org_offering", "organization_id", "course_offering_id"),
     )
-
-    student_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
-        nullable=False,
-    )
-
-    section_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
-        nullable=False,
-    )
-
-    enrolled_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        nullable=False,
-        server_default=func.now(),
-    )
-
-    status: Mapped[EnrollmentStatus] = mapped_column(
-        Enum(
-            EnrollmentStatus,
-            name="enrollment_status",
-            values_callable=lambda enum_cls: [
-                item.value for item in enum_cls
-            ],
-        ),
-        nullable=False,
-        default=EnrollmentStatus.ENROLLED,
-    )
+    student_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    course_offering_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    enrolled_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    dropped_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    status: Mapped[EnrollmentStatus] = mapped_column(Enum(EnrollmentStatus, name="enrollment_status", values_callable=lambda e: [i.value for i in e]), nullable=False, default=EnrollmentStatus.ENROLLED)
 
 
 class AttendanceRecord(TenantModel):
