@@ -12,5 +12,6 @@ export const attendanceApi = {
   markBulk: (id, data) => apiClient.post(`${base}/sessions/${id}/records`, data),
   updateRecord: (id, data) => apiClient.patch(`${base}/records/${id}`, data),
   offeringSummary: (id) => apiClient.get(`${base}/course-offerings/${id}/summary`),
-  mySummary: (id) => apiClient.get(`${base}/student/me/${id}`),\n  myHistory: (params = {}) => apiClient.get(`${base}/student/me`, { params }),
+  mySummary: (id) => apiClient.get(`${base}/student/me/${id}`),
+  myHistory: (params = {}) => apiClient.get(`${base}/student/me`, { params }),
 };

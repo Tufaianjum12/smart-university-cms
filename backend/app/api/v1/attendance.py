@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
-from app.models import User, UserRole
+from app.models.user import User, UserRole
 from app.schemas.attendance import (
     AttendanceEnrollmentRow,
     AttendanceRecordRead,

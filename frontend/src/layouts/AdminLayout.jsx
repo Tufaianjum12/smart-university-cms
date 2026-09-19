@@ -17,6 +17,7 @@ const adminLinks = [
   ["/admin/curriculum", "Curriculum", "list-check"],
   ["/admin/prerequisites", "Prerequisites", "signpost-split"],
   ["/admin/attendance", "Attendance", "calendar-check"],
+  ["/admin/attendance-analytics", "Attendance Analytics", "graph-up-arrow"],
 ];
 
 export default function AdminLayout() {
@@ -25,7 +26,7 @@ export default function AdminLayout() {
   const teacher = user?.role === "teacher";
 
   const links = teacher
-    ? [["/teacher/attendance", "Attendance", "calendar-check"]]
+    ? [["/teacher/attendance", "Attendance", "calendar-check"], ["/teacher/attendance-analytics", "Analytics", "graph-up-arrow"]]
     : adminLinks;
 
   return (

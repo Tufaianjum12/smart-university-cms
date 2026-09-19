@@ -4,7 +4,8 @@ import { attendanceApi } from "../services/attendanceService";
 
 export default function StudentAttendancePage() {
   const [rows, setRows] = useState([]);
-  const [summaries, setSummaries] = useState({});\n  const [history, setHistory] = useState([]);
+  const [summaries, setSummaries] = useState({});
+  const [history, setHistory] = useState([]);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
 
@@ -12,7 +13,8 @@ export default function StudentAttendancePage() {
     async function load() {
       try {
         const [response, historyResponse] = await Promise.all([courseApi.enrollments(), attendanceApi.myHistory()]);
-        setHistory(historyResponse.data);\n        const enrollments = response.data.filter((x) => x.status === "enrolled" || x.status === "completed");
+        setHistory(historyResponse.data);
+        const enrollments = response.data.filter((x) => x.status === "enrolled" || x.status === "completed");
         setRows(enrollments);
         const results = await Promise.all(
           enrollments.map(async (row) => {
@@ -39,7 +41,7 @@ export default function StudentAttendancePage() {
   return (
     <div className="container py-4">
       <h1 className="h3">My Attendance</h1>
-      <p className="text-muted">Your attendance is calculated by the backend.</p>
+      <p className="text-muted">Your attendance is calculated by the backend.</p><a className="btn btn-dark mb-3" href="/student/attendance-analytics">Open Attendance Analytics</a>
       {error && <div className="alert alert-danger">{error}</div>}
       <div className="row g-3">
         {rows.map((row) => {

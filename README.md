@@ -187,4 +187,81 @@ Run the migration with:
 alembic upgrade head
 ```
 
-Phase 6 intentionally does not implement Phase 7 attendance prediction, recovery calculations, warnings, notifications, or AI analysis.
+The Phase 6 baseline intentionally did not implement Phase 7 analytics; Phase 7 now adds deterministic attendance analysis without AI.
+
+
+## Phase 7 — Intelligent Attendance Analysis
+
+Phase 7 adds deterministic attendance analytics on top of the Phase 6 session/record system. It does not use an LLM, RAG, embeddings, notifications, or automatic warnings.
+
+### Analytics
+
+- Student attendance summary and risk classification
+- Running attendance trend and trend classification
+- Course-level student analytics
+- Recovery calculation: classes required to reach the configured minimum
+- Maximum future absences while remaining at/above the configured minimum
+- Tenant-scoped attendance policy
+
+### Attendance policy
+
+The existing tenant organization settings are the source of the attendance policy.
+
+`GET /api/v1/organization/settings` exposes the settings. The existing organization administrator settings endpoint can update `minimum_attendance_percentage`. Phase 7 additionally reads these optional `academic_rules` keys:
+
+```json
+{
+  "late_counts_as_attended": true,
+  "excused_counts_in_denominator": false,
+  "attendance_trend_threshold": 5
+}
+```
+
+Defaults are used when a key is absent.
+
+### Phase 7 API endpoints
+
+- `GET /api/v1/attendance/analytics/policy`
+- `GET /api/v1/attendance/analytics/student/me/{offering_id}`
+- `GET /api/v1/attendance/analytics/student/me/{offering_id}/trend`
+- `GET /api/v1/attendance/analytics/course-offerings/{offering_id}`
+- `GET /api/v1/attendance/analytics/recovery`
+- `GET /api/v1/attendance/analytics/maximum-absences`
+
+Student analytics derive the student identity from the authenticated user. Teacher analytics verify the teacher is assigned to the requested course offering. All queries are organization-scoped.
+
+### Calculation rules
+
+- `PRESENT` counts as attended.
+- `LATE` counts as attended by default; this can be disabled through `academic_rules`.
+- `ABSENT` counts against attendance.
+- `EXCUSED` is excluded from the denominator by default; this can be changed through `academic_rules`.
+- Cancelled sessions are excluded.
+- Percentages are calculated with `Decimal` and rounded to two decimal places using half-up rounding.
+- Trend classification uses the running percentage at the midpoint versus the latest running percentage. The configurable threshold defaults to 5 percentage points. Fewer than four counted records produces `INSUFFICIENT_DATA`.
+
+Risk is deterministic: `SAFE` means the current percentage meets the configured minimum; `AT_RISK` means it is below the minimum but the recovery calculation can reach it; `CRITICAL` is reserved for a mathematically non-recoverable target (for example a 100% target after a counted absence). This avoids inventing a predictive AI score.
+
+### Development commands
+
+Backend:
+
+```bash
+cd backend
+pip install -r requirements.txt
+alembic upgrade head
+pytest
+uvicorn app.main:app --reload
+```
+
+Frontend:
+
+```bash
+cd frontend
+npm install
+npm run lint
+npm run build
+npm run dev
+```
+
+No Phase 7 database migration is required because the project already has tenant organization settings with the minimum attendance field and JSON academic rules.
